@@ -68,7 +68,7 @@ lib.makeScopeWithSplicing splicePackages newScope otherSplices (_: {}) (spliced:
   };
 in
 
-impure-cmds // appleSourcePackages // chooseLibs // {
+impure-cmds // appleSourcePackages // chooseLibs // rec {
 
   inherit apple_sdk;
 
