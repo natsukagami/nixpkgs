@@ -97,6 +97,7 @@ let
     "autolink-driver"
     "compiler"
     # "clang-builtin-headers"
+    "libexec"
     "stdlib"
     "sdk-overlay"
     "static-mirror-lib"
@@ -287,7 +288,7 @@ stdenv.mkDerivation {
       mkdir src
       cd src
 
-      ${copySource "swift-cmark"}
+      ${copySource "cmark"}
       ${copySource "llvm-project"}
       ${copySource "swift"}
       ${copySource "swift-experimental-string-processing"}
@@ -298,133 +299,89 @@ stdenv.mkDerivation {
     '';
 
   patchPhase = ''
-     # Just patch all the things for now, we can focus this later.
-     # TODO: eliminate use of env.
-     find -type f -print0 | xargs -0 sed -i \
-     ${lib.optionalString stdenv.hostPlatform.isDarwin "-e 's|/usr/libexec/PlistBuddy|${xcbuild}/bin/PlistBuddy|g'"} \
-       -e 's|/usr/bin/env|${coreutils}/bin/env|g' \
-       -e 's|/usr/bin/make|${gnumake}/bin/make|g' \
-       -e 's|/bin/mkdir|${coreutils}/bin/mkdir|g' \
-       -e 's|/bin/cp|${coreutils}/bin/cp|g' \
-       -e 's|/usr/bin/file|${file}/bin/file|g'
+    # Just patch all the things for now, we can focus this later.
+    # TODO: eliminate use of env.
+    find -type f -print0 | xargs -0 sed -i \
+    ${lib.optionalString stdenv.hostPlatform.isDarwin "-e 's|/usr/libexec/PlistBuddy|${xcbuild}/bin/PlistBuddy|g'"} \
+      -e 's|/usr/bin/env|${coreutils}/bin/env|g' \
+      -e 's|/usr/bin/make|${gnumake}/bin/make|g' \
+      -e 's|/bin/mkdir|${coreutils}/bin/mkdir|g' \
+      -e 's|/bin/cp|${coreutils}/bin/cp|g' \
+      -e 's|/usr/bin/file|${file}/bin/file|g'
 
-     patch -p1 -d swift -i ${./patches/swift-cmake-3.25-compat.patch}
-     patch -p1 -d swift -i ${./patches/swift-wrap.patch}
-     patch -p1 -d swift -i ${./patches/swift-nix-resource-root.patch}
-     patch -p1 -d swift -i ${./patches/swift-linux-fix-libc-paths.patch}
-     patch -p1 -d swift -i ${./patches/swift-linux-fix-linking.patch}
-     patch -p1 -d swift -i ${./patches/swift-darwin-libcxx-flags.patch}
-     patch -p1 -d swift -i ${
-       replaceVars ./patches/swift-darwin-plistbuddy-workaround.patch {
-         inherit swiftArch;
-       }
-     }
-     patch -p1 -d swift -i ${
-       replaceVars ./patches/swift-prevent-sdk-dirs-warning.patch {
-         inherit (builtins) storeDir;
-       }
-     }
+    patch -p1 -d swift -i ${./patches/swift-wrap.patch}
+    patch -p1 -d swift -i ${./patches/swift-nix-resource-root.patch}
+    patch -p1 -d swift -i ${./patches/swift-linux-fix-libc-paths.patch}
+    patch -p1 -d swift -i ${./patches/swift-linux-fix-linking.patch}
+    patch -p1 -d swift -i ${./patches/swift-darwin-libcxx-flags.patch}
+    patch -p1 -d swift -i ${
+      replaceVars ./patches/swift-darwin-plistbuddy-workaround.patch {
+        inherit swiftArch;
+      }
+    }
+    patch -p1 -d swift -i ${
+      replaceVars ./patches/swift-prevent-sdk-dirs-warning.patch {
+        inherit (builtins) storeDir;
+      }
+    }
 
-     # This patch needs to know the lib output location, so must be substituted
-     # in the same derivation as the compiler.
-     storeDir="${builtins.storeDir}" \
-       substituteAll ${./patches/swift-separate-lib.patch} $TMPDIR/swift-separate-lib.patch
-     patch -p1 -d swift -i $TMPDIR/swift-separate-lib.patch
+    # This patch needs to know the lib output location, so must be substituted
+    # in the same derivation as the compiler.
+    storeDir="${builtins.storeDir}" \
+      substituteAll ${./patches/swift-separate-lib.patch} $TMPDIR/swift-separate-lib.patch
+    patch -p1 -d swift -i $TMPDIR/swift-separate-lib.patch
 
-     patch -p1 -d llvm-project/llvm -i ${./patches/llvm-module-cache.patch}
+    patch -p1 -d llvm-project -i ${./patches/lldb-build-fix.patch}
 
-     for lldbPatch in ${
-       lib.escapeShellArgs [
-         # Fixes for SWIG 4
-         (fetchpatch2 {
-           url = "https://github.com/llvm/llvm-project/commit/81fc5f7909a4ef5a8d4b5da2a10f77f7cb01ba63.patch?full_index=1";
-           stripLen = 1;
-           hash = "sha256-Znw+C0uEw7lGETQLKPBZV/Ymo2UigZS+Hv/j1mUo7p0=";
-         })
-         (fetchpatch2 {
-           url = "https://github.com/llvm/llvm-project/commit/f0a25fe0b746f56295d5c02116ba28d2f965c175.patch?full_index=1";
-           stripLen = 1;
-           hash = "sha256-QzVeZzmc99xIMiO7n//b+RNAvmxghISKQD93U2zOgFI=";
-         })
-         (fetchpatch2 {
-           url = "https://github.com/llvm/llvm-project/commit/ba35c27ec9aa9807f5b4be2a0c33ca9b045accc7.patch?full_index=1";
-           stripLen = 1;
-           hash = "sha256-LXl+WbpmWZww5xMDrle3BM2Tw56v8k9LO1f1Z1/wDTs=";
-         })
-         (fetchpatch2 {
-           url = "https://github.com/llvm/llvm-project/commit/9ec115978ea2bdfc60800cd3c21264341cdc8b0a.patch?full_index=1";
-           stripLen = 1;
-           hash = "sha256-u0zSejEjfrH3ZoMFm1j+NVv2t5AP9cE5yhsrdTS1dG4=";
-         })
-       ]
-     }; do
-       patch -p1 -d llvm-project/lldb -i $lldbPatch
-     done
+    patch -p1 -d llvm-project/llvm -i ${./patches/llvm-module-cache.patch}
+    patch -p1 -d llvm-project/clang -i ${./patches/clang-toolchain-dir.patch}
+    patch -p1 -d llvm-project/clang -i ${./patches/clang-wrap.patch}
+    patch -p1 -d llvm-project/clang -i ${../../llvm/15/clang/purity.patch}
 
-     patch -p1 -d llvm-project/clang -i ${./patches/clang-toolchain-dir.patch}
-     patch -p1 -d llvm-project/clang -i ${./patches/clang-wrap.patch}
-     patch -p1 -d llvm-project/clang -i ${../../llvm/12/clang/purity.patch}
-     patch -p2 -d llvm-project/clang -i ${
-       fetchpatch {
-         name = "clang-cmake-fix-interpreter.patch";
-         url = "https://github.com/llvm/llvm-project/commit/b5eaf500f2441eff2277ea2973878fb1f171fd0a.patch";
-         sha256 = "1rma1al0rbm3s3ql6bnvbcighp74lri1lcrwbyacgdqp80fgw1b6";
-       }
-     }
+    ${lib.optionalString stdenv.hostPlatform.isLinux ''
+      substituteInPlace llvm-project/clang/lib/Driver/ToolChains/Linux.cpp \
+        --replace 'SysRoot + "/lib' '"${glibc}/lib" "' \
+        --replace 'SysRoot + "/usr/lib' '"${glibc}/lib" "' \
+        --replace 'LibDir = "lib";' 'LibDir = "${glibc}/lib";' \
+        --replace 'LibDir = "lib64";' 'LibDir = "${glibc}/lib";' \
+        --replace 'LibDir = X32 ? "libx32" : "lib64";' 'LibDir = "${glibc}/lib";'
 
-    # gcc-13 build fixes
-     patch -p2 -d llvm-project/llvm -i ${
-       fetchpatch {
-         name = "gcc-13.patch";
-         url = "https://github.com/llvm/llvm-project/commit/ff1681ddb303223973653f7f5f3f3435b48a1983.patch";
-         hash = "sha256-nkRPWx8gNvYr7mlvEUiOAb1rTrf+skCZjAydJVUHrcI=";
-       }
-     }
+      # uuid.h is not part of glibc, but of libuuid.
+      sed -i 's|''${GLIBC_INCLUDE_PATH}/uuid/uuid.h|${libuuid.dev}/include/uuid/uuid.h|' \
+        swift/stdlib/public/Platform/glibc.modulemap.gyb
+    ''}
 
-     ${lib.optionalString stdenv.hostPlatform.isLinux ''
-       substituteInPlace llvm-project/clang/lib/Driver/ToolChains/Linux.cpp \
-         --replace 'SysRoot + "/lib' '"${glibc}/lib" "' \
-         --replace 'SysRoot + "/usr/lib' '"${glibc}/lib" "' \
-         --replace 'LibDir = "lib";' 'LibDir = "${glibc}/lib";' \
-         --replace 'LibDir = "lib64";' 'LibDir = "${glibc}/lib";' \
-         --replace 'LibDir = X32 ? "libx32" : "lib64";' 'LibDir = "${glibc}/lib";'
+    # Remove tests for cross compilation, which we don't currently support.
+    rm swift/test/Interop/Cxx/class/constructors-copy-irgen-*.swift
+    rm swift/test/Interop/Cxx/class/constructors-irgen-*.swift
 
-       # uuid.h is not part of glibc, but of libuuid.
-       sed -i 's|''${GLIBC_INCLUDE_PATH}/uuid/uuid.h|${libuuid.dev}/include/uuid/uuid.h|' \
-         swift/stdlib/public/Platform/glibc.modulemap.gyb
-     ''}
+    # TODO: consider fixing and re-adding. This test fails due to a non-standard "install_prefix".
+    rm swift/validation-test/Python/build_swift.swift
 
-     # Remove tests for cross compilation, which we don't currently support.
-     rm swift/test/Interop/Cxx/class/constructors-copy-irgen-*.swift
-     rm swift/test/Interop/Cxx/class/constructors-irgen-*.swift
+    # We cannot handle the SDK location being in "Weird Location" due to Nix isolation.
+    rm swift/test/DebugInfo/compiler-flags.swift
 
-     # TODO: consider fixing and re-adding. This test fails due to a non-standard "install_prefix".
-     rm swift/validation-test/Python/build_swift.swift
+    # TODO: Fix issue with ld.gold invoked from script finding crtbeginS.o and crtendS.o.
+    rm swift/test/IRGen/ELF-remove-autolink-section.swift
 
-     # We cannot handle the SDK location being in "Weird Location" due to Nix isolation.
-     rm swift/test/DebugInfo/compiler-flags.swift
+    # The following two tests fail because we use don't use the bundled libicu:
+    # [SOURCE_DIR/utils/build-script] ERROR: can't find source directory for libicu (tried /build/src/icu)
+    rm swift/validation-test/BuildSystem/default_build_still_performs_epilogue_opts_after_split.test
+    rm swift/validation-test/BuildSystem/test_early_swift_driver_and_infer.swift
 
-     # TODO: Fix issue with ld.gold invoked from script finding crtbeginS.o and crtendS.o.
-     rm swift/test/IRGen/ELF-remove-autolink-section.swift
+    # TODO: This test fails for some unknown reason
+    rm swift/test/Serialization/restrict-swiftmodule-to-revision.swift
 
-     # The following two tests fail because we use don't use the bundled libicu:
-     # [SOURCE_DIR/utils/build-script] ERROR: can't find source directory for libicu (tried /build/src/icu)
-     rm swift/validation-test/BuildSystem/default_build_still_performs_epilogue_opts_after_split.test
-     rm swift/validation-test/BuildSystem/test_early_swift_driver_and_infer.swift
+    # This test was flaky in ofborg, see #186476
+    rm swift/test/AutoDiff/compiler_crashers_fixed/issue-56649-missing-debug-scopes-in-pullback-trampoline.swift
 
-     # TODO: This test fails for some unknown reason
-     rm swift/test/Serialization/restrict-swiftmodule-to-revision.swift
+    patchShebangs .
 
-     # This test was flaky in ofborg, see #186476
-     rm swift/test/AutoDiff/compiler_crashers_fixed/issue-56649-missing-debug-scopes-in-pullback-trampoline.swift
-
-     patchShebangs .
-
-     ${lib.optionalString (!stdenv.hostPlatform.isDarwin) ''
-       # NOTE: This interferes with ABI stability on Darwin, which uses the system
-       # libraries in the hardcoded path /usr/lib/swift.
-       fixCmakeFiles .
-     ''}
+    ${lib.optionalString (!stdenv.hostPlatform.isDarwin) ''
+      # NOTE: This interferes with ABI stability on Darwin, which uses the system
+      # libraries in the hardcoded path /usr/lib/swift.
+      fixCmakeFiles .
+    ''}
   '';
 
   # > clang-15-unwrapped: error: unsupported option '-fzero-call-used-regs=used-gpr' for target 'arm64-apple-macosx10.9.0'
@@ -470,7 +427,7 @@ stdenv.mkDerivation {
       }
 
       cmakeFlags="-GNinja"
-      buildProject swift-cmark
+      buildProject cmark
 
       # Some notes:
       # - The Swift build just needs Clang.
@@ -518,12 +475,16 @@ stdenv.mkDerivation {
         -DBOOTSTRAPPING_MODE=BOOTSTRAPPING${lib.optionalString stdenv.hostPlatform.isDarwin "-WITH-HOSTLIBS"}
         -DSWIFT_ENABLE_EXPERIMENTAL_DIFFERENTIABLE_PROGRAMMING=ON
         -DSWIFT_ENABLE_EXPERIMENTAL_CONCURRENCY=ON
+        -DSWIFT_ENABLE_EXPERIMENTAL_CXX_INTEROP=ON
         -DSWIFT_ENABLE_EXPERIMENTAL_DISTRIBUTED=ON
         -DSWIFT_ENABLE_EXPERIMENTAL_STRING_PROCESSING=ON
+        -DSWIFT_ENABLE_EXPERIMENTAL_OBSERVATION=ON
+        -DSWIFT_ENABLE_BACKTRACING=ON
+        -DSWIFT_BUILD_LIBEXEC=${if stdenv.isDarwin then "ON" else "OFF"}
         -DLLVM_DIR=$SWIFT_BUILD_ROOT/llvm/lib/cmake/llvm
         -DClang_DIR=$SWIFT_BUILD_ROOT/llvm/lib/cmake/clang
-        -DSWIFT_PATH_TO_CMARK_SOURCE=$SWIFT_SOURCE_ROOT/swift-cmark
-        -DSWIFT_PATH_TO_CMARK_BUILD=$SWIFT_BUILD_ROOT/swift-cmark
+        -DSWIFT_PATH_TO_CMARK_SOURCE=$SWIFT_SOURCE_ROOT/cmark
+        -DSWIFT_PATH_TO_CMARK_BUILD=$SWIFT_BUILD_ROOT/cmark
         -DSWIFT_PATH_TO_LIBDISPATCH_SOURCE=$SWIFT_SOURCE_ROOT/swift-corelibs-libdispatch
         -DSWIFT_PATH_TO_SWIFT_SYNTAX_SOURCE=$SWIFT_SOURCE_ROOT/swift-syntax
         -DSWIFT_PATH_TO_STRING_PROCESSING_SOURCE=$SWIFT_SOURCE_ROOT/swift-experimental-string-processing
@@ -660,7 +621,7 @@ stdenv.mkDerivation {
     # Undo the clang and swift wrapping we did for the build.
     # (This happened via patches to cmake files.)
     cd $SWIFT_BUILD_ROOT
-    mv llvm/bin/clang-15{-unwrapped,}
+    mv llvm/bin/clang-16{-unwrapped,}
     mv swift/bin/swift-frontend{-unwrapped,}
 
     mkdir $out $lib
