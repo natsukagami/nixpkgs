@@ -29,10 +29,6 @@ stdenv.mkDerivation (
       ;
     swiftDriver = lib.optionalString useSwiftDriver "${swift-driver}/bin/swift-driver";
 
-    env.darwinMinVersion = lib.optionalString stdenv.targetPlatform.isDarwin (
-      stdenv.targetPlatform.darwinMinVersion
-    );
-
     passAsFile = [ "buildCommand" ];
     buildCommand = ''
       mkdir -p $out/bin $out/nix-support
@@ -43,11 +39,12 @@ stdenv.mkDerivation (
       ln -s -t $out/bin/ $swift/bin/swift*
 
       # Replace specific binaries with wrappers.
-      for executable in swift swiftc swift-frontend; do
-        export prog=$swift/bin/$executable
-        rm $out/bin/$executable
-        substituteAll '${./wrapper.sh}' $out/bin/$executable
-        chmod a+x $out/bin/$executable
+      for progName in swift swiftc swift-frontend; do
+        prog=$swift/bin/$progName
+        export prog progName
+        rm $out/bin/$progName
+        substituteAll '${./wrapper.sh}' $out/bin/$progName
+        chmod a+x $out/bin/$progName
       done
 
       ${lib.optionalString useSwiftDriver ''
@@ -63,13 +60,6 @@ stdenv.mkDerivation (
       ln -s ${swift.lib}/lib $out/lib
 
       substituteAll ${./setup-hook.sh} $out/nix-support/setup-hook
-
-      # Propagate any propagated inputs from the unwrapped Swift compiler, if any.
-      if [ -e "$swift/nix-support" ]; then
-        for input in "$swift/nix-support/"*propagated*; do
-          cp "$input" "$out/nix-support/$(basename "$input")"
-        done
-      fi
     '';
 
     passthru = {
