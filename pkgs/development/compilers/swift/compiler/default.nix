@@ -489,11 +489,14 @@ stdenv.mkDerivation {
       buildProject llvm llvm-project/llvm
 
     ''
-    + lib.optionalString stdenv.hostPlatform.isDarwin ''
-      # Add appleSwiftCore to the search paths. Adding the whole SDK results in build failures.
+    + lib.optionalString stdenv.isDarwin ''
+      # Add appleSwiftCore to the search paths. We can't simply add it to
+      # buildInputs, because it is potentially an older stdlib than the one we're
+      # building. We have to remove it again after the main Swift build, or later
+      # build steps may fail.
       OLD_NIX_SWIFTFLAGS_COMPILE="$NIX_SWIFTFLAGS_COMPILE"
       OLD_NIX_LDFLAGS="$NIX_LDFLAGS"
-      export NIX_SWIFTFLAGS_COMPILE=" -I ${appleSwiftCore}/lib/swift"
+      export NIX_SWIFTFLAGS_COMPILE+=" -I ${appleSwiftCore}/lib/swift"
       export NIX_LDFLAGS+=" -L ${appleSwiftCore}/lib/swift"
     ''
     + ''
@@ -675,13 +678,6 @@ stdenv.mkDerivation {
 
     cd $SWIFT_BUILD_ROOT/swift
     ninjaInstallPhase
-
-    ${lib.optionalString stdenv.hostPlatform.isDarwin ''
-      cd $SWIFT_BUILD_ROOT/swift-concurrency-backdeploy
-      installTargets=install-back-deployment
-      ninjaInstallPhase
-      unset installTargets
-    ''}
 
     # Separate $lib output here, because specific logic follows.
     # Only move the dynamic run-time parts, to keep $lib small. Every Swift
